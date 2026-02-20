@@ -2,36 +2,44 @@
 
 > Fediverse/ATProto users lack a simple, private way to schedule posts. Existing tools are cloud-based or tied to Twitter/X.
 
+## Feedback & Ideas
+
+> **This project is being built in public and we want to hear from you.**
+> Found a bug? Have a feature idea? Something feel wrong or missing?
+> **[Open an issue](../../issues)** — every piece of feedback directly shapes what gets built next.
+
+## Status
+
+> 🚧 In active development — not yet production ready
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Project scaffold & CI | ✅ Complete | FastAPI + Svelte, Docker, SQLModel schemas |
+| Single-user auth & encryption | ✅ Complete | bcrypt, session cookies, Fernet credential encryption |
+| Mastodon OAuth & posting | ✅ Complete | OAuth 2.0 flow, encrypted token storage, live token verification |
+| Bluesky auth & posting | 🚧 In Progress | |
+| Composer UI & scheduling interface | 📋 Planned | |
+| Background scheduler & retry logic | 📋 Planned | |
+| Code review | 📋 Planned | |
+| Pre-launch verification | 📋 Planned | |
+| Deploy to production | 📋 Planned | |
+
 ## What It Solves
 
-Fediverse/ATProto users lack a simple, private way to schedule posts. Existing tools are cloud-based or tied to Twitter/X.
+Privacy-conscious professionals, indie makers, and community managers on decentralized social platforms need a simple, private way to schedule posts — without handing credentials to a cloud service.
 
 ## Who It's For
 
-Privacy-conscious professionals, indie makers, and community managers on decentralized social platforms.
+Self-hosters who want full control: your posts, your server, your data.
 
 ## Tech Stack
 - Backend: FastAPI, SQLModel (SQLite), APScheduler
 - Frontend: Svelte, Vite
 - Authentication: bcrypt, session cookies
 - Encryption: Fernet (cryptography)
-- Mastodon: Mastodon.py
+- Mastodon: Mastodon.py (OAuth 2.0)
 - Bluesky: atproto SDK
 - Deployment: Docker, Docker Compose
-
-## Development Status
-
-| Task | Status | Notes |
-|------|--------|-------|
-| 1. Initialize project skeleton and Docker Compose | ✅ Complete | FastAPI + Svelte scaffold, Dockerfile, docker-compose.yml, health endpoint, SQLModel schemas |
-| 2. Single-user auth and credential encryption | ✅ Complete | Setup wizard, bcrypt password hashing, session cookies, Fernet encryption for credentials |
-| 3. Mastodon OAuth flow and posting | ⬜ Pending | |
-| 4. Bluesky auth and posting | ⬜ Pending | |
-| 5. Composer UI, queue view, and scheduling interface | ⬜ Pending | |
-| 6. Background scheduler and retry logic | ⬜ Pending | |
-| 7. Code review | ⬜ Pending | |
-| 8. Pre-launch verification | ⬜ Pending | |
-| 9. Deploy to production | ⬜ Pending | |
 
 ## Quick Start
 
@@ -47,25 +55,27 @@ Privacy-conscious professionals, indie makers, and community managers on decentr
    ```bash
    cp .env.example .env
    ```
-   Generate a 32-byte base64 key for `SERVER_KEY` (e.g., `openssl rand -base64 32`).
-   Set `SECRET_KEY` to a random string.
+   Generate a 32-byte base64 key for `SERVER_KEY`:
+   ```bash
+   openssl rand -base64 32
+   ```
+   Set `SECRET_KEY` to a different random string.
 
 3. Start the container:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
-4. Open http://localhost:8000 in your browser.
+4. Open http://localhost:8000 in your browser and complete the setup wizard.
 
 ### Development Setup
 
 #### Backend
 ```bash
-cd fedisched
 python -m venv venv
 source venv/bin/activate
-pip install -e .
-cp .env.example .env  # and fill values
+pip install -e ".[dev]"
+cp .env.example .env  # fill in values
 uvicorn app.main:app --reload
 ```
 
@@ -76,24 +86,48 @@ npm install
 npm run dev
 ```
 
-The frontend will proxy API requests to `http://localhost:8000`.
+The frontend proxies API requests to `http://localhost:8000`.
+
+## Connecting a Mastodon Account
+
+1. Log in and navigate to the Accounts page.
+2. Enter your Mastodon instance URL (e.g. `mastodon.social`).
+3. You will be redirected to your instance to authorize Fedisched.
+4. After approval, your account appears in the list — credentials are stored encrypted using your `SERVER_KEY`.
+
+> **Callback URL:** The OAuth callback goes to `BACKEND_URL/api/accounts/mastodon/callback`. For local development this is `http://localhost:8000/api/accounts/mastodon/callback`. Set `BACKEND_URL` in `.env` to match your deployment URL in production.
+
+## Backup & Recovery
+
+Your data lives in a single SQLite file (`fedisched.db`, mounted at `/data/fedisched.db` inside the container).
+
+**What to back up:**
+- The SQLite database file from the Docker volume
+- Your `.env` file — specifically `SERVER_KEY`, which is required to decrypt stored credentials
+
+**If you lose `SERVER_KEY`:** The database itself is intact but all stored OAuth tokens and app passwords will be unreadable. You will need to reconnect all accounts after generating a new key.
+
+**Moving to a new server:** Copy both the database file and `.env`, then `docker compose up -d`. No other steps required.
 
 ## Project Structure
 
-- `app/` – FastAPI backend
-  - `main.py` – Application entry point
-  - `config.py` – Environment configuration
-  - `database.py` – SQLModel engine and session
-  - `models.py` – SQLModel schemas (User, Account, ScheduledPost)
-  - `auth.py` – Authentication utilities (bcrypt, session cookies)
-  - `encryption.py` – Fernet encryption for credentials
-  - `api/` – API endpoints
-    - `auth.py` – Authentication endpoints (setup, login, logout)
-- `frontend/` – Svelte SPA
-- `pyproject.toml` – Python dependencies
-- `Dockerfile` – Multi-stage container build
-- `docker-compose.yml` – Compose configuration
-- `.env.example` – Environment template
+```
+app/
+├── main.py            — Application entry point
+├── config.py          — Environment configuration
+├── database.py        — SQLModel engine and session
+├── models.py          — SQLModel schemas (User, Account, ScheduledPost, MastodonOAuthState)
+├── auth.py            — Authentication utilities (bcrypt, session cookies)
+├── encryption.py      — Fernet encryption for stored credentials
+├── platforms/
+│   └── mastodon.py    — Mastodon.py wrapper (OAuth, posting, token verification)
+└── api/
+    ├── auth.py        — Auth endpoints (setup wizard, login, logout)
+    ├── accounts.py    — Account endpoints (Mastodon OAuth flow, listing, status)
+    └── health.py      — Health check endpoint
+frontend/              — Svelte SPA (in development)
+tests/                 — pytest test suite (51 tests)
+```
 
 ## License
 
