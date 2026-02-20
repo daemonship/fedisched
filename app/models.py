@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timezone
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship
@@ -54,6 +55,26 @@ class Account(SQLModel, table=True):
 
     user: User = Relationship(back_populates="accounts")
     scheduled_posts: List["ScheduledPost"] = Relationship(back_populates="account")
+
+
+class MastodonOAuthState(SQLModel, table=True):
+    """Temporary storage for Mastodon OAuth state tokens.
+
+    Stores client credentials between /connect and /callback during the OAuth flow.
+    Records older than 15 minutes should be treated as expired.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    state_token: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32),
+        unique=True,
+        index=True,
+    )
+    user_id: int = Field(foreign_key="user.id", index=True)
+    instance_url: str
+    client_id: str
+    client_secret: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ScheduledPost(SQLModel, table=True):
