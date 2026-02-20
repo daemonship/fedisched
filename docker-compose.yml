@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  fedisched:
+    build: .
+    container_name: fedisched
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_KEY=${SERVER_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=sqlite:///./data/fedisched.db
+      - ENVIRONMENT=production
+      - FRONTEND_URL=http://localhost:8000
+      - BACKEND_URL=http://localhost:8000
+      - LOG_LEVEL=INFO
+    volumes:
+      - fedisched_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  fedisched_data:
+    driver: local
