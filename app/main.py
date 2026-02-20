@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import create_db_and_tables
-from app.api import health
+from app.api import health, auth
 
 # Configure logging
 logging.basicConfig(
@@ -45,6 +45,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 
 # Serve static files (frontend) in production
 # We'll mount the built frontend later
@@ -58,4 +59,5 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

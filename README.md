@@ -24,7 +24,7 @@ Privacy-conscious professionals, indie makers, and community managers on decentr
 | Task | Status | Notes |
 |------|--------|-------|
 | 1. Initialize project skeleton and Docker Compose | ✅ Complete | FastAPI + Svelte scaffold, Dockerfile, docker-compose.yml, health endpoint, SQLModel schemas |
-| 2. Single-user auth and credential encryption | ⬜ Pending | |
+| 2. Single-user auth and credential encryption | ✅ Complete | Setup wizard, bcrypt password hashing, session cookies, Fernet encryption for credentials |
 | 3. Mastodon OAuth flow and posting | ⬜ Pending | |
 | 4. Bluesky auth and posting | ⬜ Pending | |
 | 5. Composer UI, queue view, and scheduling interface | ⬜ Pending | |
@@ -85,7 +85,10 @@ The frontend will proxy API requests to `http://localhost:8000`.
   - `config.py` – Environment configuration
   - `database.py` – SQLModel engine and session
   - `models.py` – SQLModel schemas (User, Account, ScheduledPost)
+  - `auth.py` – Authentication utilities (bcrypt, session cookies)
+  - `encryption.py` – Fernet encryption for credentials
   - `api/` – API endpoints
+    - `auth.py` – Authentication endpoints (setup, login, logout)
 - `frontend/` – Svelte SPA
 - `pyproject.toml` – Python dependencies
 - `Dockerfile` – Multi-stage container build
