@@ -17,8 +17,8 @@
 | Project scaffold & CI | ✅ Complete | FastAPI + Svelte, Docker, SQLModel schemas |
 | Single-user auth & encryption | ✅ Complete | bcrypt, session cookies, Fernet credential encryption |
 | Mastodon OAuth & posting | ✅ Complete | OAuth 2.0 flow, encrypted token storage, live token verification |
-| Bluesky auth & posting | 🚧 In Progress | |
-| Composer UI & scheduling interface | 📋 Planned | |
+| Bluesky auth & posting | ✅ Complete | App password auth, session refresh, posting via AT Protocol |
+| Composer UI & scheduling interface | ✅ Complete | Svelte SPA with per-platform character counters, queue view, retry |
 | Background scheduler & retry logic | 📋 Planned | |
 | Code review | 📋 Planned | |
 | Pre-launch verification | 📋 Planned | |
@@ -120,13 +120,29 @@ app/
 ├── auth.py            — Authentication utilities (bcrypt, session cookies)
 ├── encryption.py      — Fernet encryption for stored credentials
 ├── platforms/
-│   └── mastodon.py    — Mastodon.py wrapper (OAuth, posting, token verification)
+│   ├── mastodon.py    — Mastodon.py wrapper (OAuth, posting, token verification)
+│   └── bluesky.py     — atproto SDK wrapper (app password auth, posting)
 └── api/
     ├── auth.py        — Auth endpoints (setup wizard, login, logout)
-    ├── accounts.py    — Account endpoints (Mastodon OAuth flow, listing, status)
+    ├── accounts.py    — Account endpoints (Mastodon OAuth, Bluesky connect, listing, status)
+    ├── posts.py       — Scheduled posts endpoints (create, list, retry, delete)
     └── health.py      — Health check endpoint
-frontend/              — Svelte SPA (in development)
-tests/                 — pytest test suite (51 tests)
+frontend/              — Svelte SPA with composer, queue, and account management
+├── src/
+│   ├── components/
+│   │   ├── Navigation.svelte
+│   │   ├── Composer.svelte    — Post composer with per-platform character counters
+│   │   ├── Queue.svelte       — Scheduled posts queue with status badges
+│   │   ├── Accounts.svelte    — Account connection and management
+│   │   ├── Login.svelte
+│   │   └── Setup.svelte
+│   ├── lib/
+│   │   ├── api.js             — API client
+│   │   └── stores.js          — Svelte stores
+│   ├── App.svelte
+│   ├── main.js
+│   └── app.css
+tests/                 — pytest test suite (74 tests)
 ```
 
 ## License

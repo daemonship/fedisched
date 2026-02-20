@@ -16,6 +16,7 @@ from app.database import get_session
 from app.encryption import decrypt_credential, encrypt_credential
 from app.models import Account, MastodonOAuthState, User
 from app.platforms import mastodon as mastodon_platform
+from app.platforms import bluesky as bluesky_platform
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class AccountResponse(BaseModel):
     display_name: Optional[str]
     avatar_url: Optional[str]
     instance_url: Optional[str]
+    bluesky_handle: Optional[str] = None
     is_active: bool
     last_synced_at: Optional[str]
     created_at: str
@@ -52,6 +54,16 @@ class MastodonConnectRequest(BaseModel):
 
 class MastodonConnectResponse(BaseModel):
     auth_url: str
+
+
+class BlueskyConnectRequest(BaseModel):
+    handle: str
+    app_password: str
+
+
+class BlueskyConnectResponse(BaseModel):
+    account_id: str
+    handle: str
 
 
 class AccountStatusResponse(BaseModel):
@@ -76,6 +88,7 @@ def _account_to_response(account: Account) -> AccountResponse:
         display_name=account.display_name,
         avatar_url=account.avatar_url,
         instance_url=account.instance_url,
+        bluesky_handle=account.bluesky_handle,
         is_active=account.is_active,
         last_synced_at=account.last_synced_at.isoformat() if account.last_synced_at else None,
         created_at=account.created_at.isoformat(),
@@ -259,6 +272,68 @@ async def mastodon_callback(
 
 
 # ---------------------------------------------------------------------------
+# Bluesky app password endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/accounts/bluesky/connect", response_model=BlueskyConnectResponse)
+async def bluesky_connect(
+    body: BlueskyConnectRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> BlueskyConnectResponse:
+    """Connect a Bluesky account using handle and app password.
+
+    The app password is exchanged for a session token, which is stored encrypted.
+    """
+    try:
+        auth_result = bluesky_platform.authenticate(body.handle, body.app_password)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    session_token = auth_result["session_token"]
+    did = auth_result["did"]
+    handle = auth_result["handle"]
+
+    # Upsert: if the user already has an account for this DID, update it
+    existing = db.exec(
+        select(Account).where(
+            Account.user_id == current_user.id,
+            Account.platform == "bluesky",
+            Account.account_id == did,
+        )
+    ).first()
+
+    if existing:
+        existing.encrypted_credentials = encrypt_credential(session_token)
+        existing.display_name = handle
+        existing.bluesky_handle = handle
+        existing.is_active = True
+        existing.last_synced_at = datetime.now(timezone.utc)
+        db.add(existing)
+    else:
+        account = Account(
+            user_id=current_user.id,
+            platform="bluesky",
+            account_id=did,
+            display_name=handle,
+            bluesky_handle=handle,
+            encrypted_credentials=encrypt_credential(session_token),
+            is_active=True,
+            last_synced_at=datetime.now(timezone.utc),
+        )
+        db.add(account)
+
+    db.commit()
+
+    logger.info("Bluesky account connected: %s (%s)", handle, did)
+    return BlueskyConnectResponse(account_id=did, handle=handle)
+
+
+# ---------------------------------------------------------------------------
 # Account listing and management
 # ---------------------------------------------------------------------------
 
@@ -296,43 +371,95 @@ async def check_account_status(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    if account.platform != "mastodon":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Status check for platform '{account.platform}' not yet supported",
-        )
+    if account.platform == "mastodon":
+        try:
+            access_token = decrypt_credential(account.encrypted_credentials)
+            account_info = mastodon_platform.verify_token(account.instance_url, access_token)
+        except ValueError as exc:
+            # Token invalid — mark inactive
+            account.is_active = False
+            db.add(account)
+            db.commit()
+            return AccountStatusResponse(
+                account_id=account.id,
+                platform=account.platform,
+                is_valid=False,
+                display_name=account.display_name,
+                avatar_url=account.avatar_url,
+                error=str(exc),
+            )
 
-    try:
-        access_token = decrypt_credential(account.encrypted_credentials)
-        account_info = mastodon_platform.verify_token(account.instance_url, access_token)
-    except ValueError as exc:
-        # Token invalid — mark inactive
-        account.is_active = False
+        # Token valid — refresh metadata
+        account.is_active = True
+        account.display_name = account_info["display_name"]
+        account.avatar_url = account_info["avatar_url"]
+        account.last_synced_at = datetime.now(timezone.utc)
         db.add(account)
         db.commit()
+
         return AccountStatusResponse(
             account_id=account.id,
             platform=account.platform,
-            is_valid=False,
-            display_name=account.display_name,
-            avatar_url=account.avatar_url,
-            error=str(exc),
+            is_valid=True,
+            display_name=account_info["display_name"],
+            avatar_url=account_info["avatar_url"],
         )
 
-    # Token valid — refresh metadata
-    account.is_active = True
-    account.display_name = account_info["display_name"]
-    account.avatar_url = account_info["avatar_url"]
-    account.last_synced_at = datetime.now(timezone.utc)
-    db.add(account)
-    db.commit()
+    if account.platform == "bluesky":
+        session_token = None
+        try:
+            session_token = decrypt_credential(account.encrypted_credentials)
+            account_info = bluesky_platform.verify_token(session_token)
+        except ValueError as exc:
+            # Token invalid — try refreshing if we have a token
+            if session_token:
+                try:
+                    new_session = bluesky_platform.refresh_session(session_token)
+                    account.encrypted_credentials = encrypt_credential(new_session["session_token"])
+                    account.is_active = True
+                    account.last_synced_at = datetime.now(timezone.utc)
+                    db.add(account)
+                    db.commit()
+                    return AccountStatusResponse(
+                        account_id=account.id,
+                        platform=account.platform,
+                        is_valid=True,
+                        display_name=account.display_name,
+                        avatar_url=account.avatar_url,
+                    )
+                except ValueError:
+                    pass
+            # Refresh also failed or no token — mark inactive
+            account.is_active = False
+            db.add(account)
+            db.commit()
+            return AccountStatusResponse(
+                account_id=account.id,
+                platform=account.platform,
+                is_valid=False,
+                display_name=account.display_name,
+                avatar_url=account.avatar_url,
+                error=str(exc),
+            )
 
-    return AccountStatusResponse(
-        account_id=account.id,
-        platform=account.platform,
-        is_valid=True,
-        display_name=account_info["display_name"],
-        avatar_url=account_info["avatar_url"],
+        # Token valid
+        account.is_active = True
+        account.display_name = account_info.get("display_name", account.display_name)
+        account.last_synced_at = datetime.now(timezone.utc)
+        db.add(account)
+        db.commit()
+
+        return AccountStatusResponse(
+            account_id=account.id,
+            platform=account.platform,
+            is_valid=True,
+            display_name=account_info.get("display_name", account.display_name),
+            avatar_url=account.avatar_url,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Status check for platform '{account.platform}' not supported",
     )
 
 
