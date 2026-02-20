@@ -20,8 +20,7 @@
 | Bluesky auth & posting | ✅ Complete | App password auth, session refresh, posting via AT Protocol |
 | Composer UI & scheduling interface | ✅ Complete | Svelte SPA with per-platform character counters, queue view, retry |
 | Background scheduler & retry logic | ✅ Complete | APScheduler polls every 30s, retry with exponential backoff (up to 3 attempts), logs errors per post |
-| Code review | 📋 Planned | |
-| Pre-launch verification | 📋 Planned | |
+| CI & pre-launch verification | ✅ Complete | GitHub Actions CI, 74 tests passing, ship-check clean |
 | Deploy to production | 📋 Planned | |
 
 ## What It Solves
