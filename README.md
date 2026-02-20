@@ -19,7 +19,7 @@
 | Mastodon OAuth & posting | ✅ Complete | OAuth 2.0 flow, encrypted token storage, live token verification |
 | Bluesky auth & posting | ✅ Complete | App password auth, session refresh, posting via AT Protocol |
 | Composer UI & scheduling interface | ✅ Complete | Svelte SPA with per-platform character counters, queue view, retry |
-| Background scheduler & retry logic | 📋 Planned | |
+| Background scheduler & retry logic | ✅ Complete | APScheduler polls every 30s, retry with exponential backoff (up to 3 attempts), logs errors per post |
 | Code review | 📋 Planned | |
 | Pre-launch verification | 📋 Planned | |
 | Deploy to production | 📋 Planned | |
@@ -87,6 +87,16 @@ npm run dev
 ```
 
 The frontend proxies API requests to `http://localhost:8000`.
+
+## How scheduling works
+
+Scheduled posts are stored in the SQLite database with a `scheduled_at` timestamp and a `status` field (`scheduled`, `publishing`, `published`, `failed`). The background scheduler runs in‑process and polls the database every 30 seconds for due posts (posts with `status = 'scheduled'` and `scheduled_at <= now`).
+
+**Persistence:** Because scheduled posts are stored in the SQLite database (persisted via Docker volume), they survive container restarts. If the container is down when a post is due, the scheduler will pick it up as soon as it starts again.
+
+**Retries:** If a post fails to publish, the scheduler will retry it up to 3 times with exponential backoff (1, 2, then 4 minutes). After the third failure, the post status changes to `failed` and no further attempts are made. You can manually retry a failed post from the queue UI.
+
+**Durability guarantees:** The scheduler runs in‑process with the FastAPI application. If the container crashes while a post is being published, the post may be left in a `publishing` state; on restart, these posts are automatically reset to `scheduled` and will be retried. This means a post could be published twice if the crash occurs after the platform API call succeeds but before the database status is updated – a rare edge case that we accept in favour of simplicity.
 
 ## Connecting a Mastodon Account
 

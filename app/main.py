@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import create_db_and_tables
+from app.scheduler import start_scheduler, stop_scheduler
 from app.api import health, auth, accounts, posts
 
 # Configure logging
@@ -22,9 +23,15 @@ async def lifespan(app: FastAPI):
     logger.info("Creating database tables...")
     create_db_and_tables()
     logger.info("Database tables created.")
+    # Start the background scheduler for publishing scheduled posts
+    logger.info("Starting background scheduler...")
+    start_scheduler()
+    logger.info("Background scheduler started.")
     yield
     # Cleanup on shutdown
     logger.info("Shutting down...")
+    stop_scheduler()
+    logger.info("Background scheduler stopped.")
 
 
 app = FastAPI(
